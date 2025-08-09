@@ -8,6 +8,24 @@ const EAT_RADIUS_PLANT_SQ = 4 * 4
 const EAT_RADIUS_PREY_SQ = 5 * 5
 const BOUNDS_PADDING = 2
 
+// Paletas de colores por variantes (genotipos)
+const COOL_PALETTE = ['#40a2ff', '#5cc8ff', '#74b9ff', '#81ecec', '#55efc4', '#2ecc71', '#1abc9c', '#a29bfe']
+const WARM_PALETTE = ['#ff5a5a', '#ff7f50', '#ffa726', '#ff7043', '#e67e22', '#e74c3c', '#ff8a80', '#ffb74d']
+
+function getVariantColor(
+  map: Map<string, string>,
+  nextIndexRef: { current: number },
+  palette: string[],
+  key: string,
+): string {
+  const existing = map.get(key)
+  if (existing) return existing
+  const color = palette[nextIndexRef.current % palette.length]
+  map.set(key, color)
+  nextIndexRef.current += 1
+  return color
+}
+
 export default function CanvasView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const settings = useSimStore((s) => s.settings)
@@ -15,6 +33,10 @@ export default function CanvasView() {
 
   const worldRef = useRef<World | null>(null)
   const lastEpochRef = useRef<number>(-1)
+  const herbColorMapRef = useRef<Map<string, string>>(new Map())
+  const carnColorMapRef = useRef<Map<string, string>>(new Map())
+  const herbColorIdxRef = useRef<number>(0)
+  const carnColorIdxRef = useRef<number>(0)
 
   // Inicializa o reinicia mundo cuando cambie resetEpoch
   useEffect(() => {
@@ -101,17 +123,28 @@ export default function CanvasView() {
 
     let rafId = 0
     let lastTs = performance.now()
+    let accumulator = 0
     let plantAccumulator = 0
     const loop = (ts: number) => {
       rafId = requestAnimationFrame(loop)
       const dtMs = ts - lastTs
       lastTs = ts
       const world = worldRef.current!
-      const dt = (dtMs / 1000) * (settings.speedFactor || 1)
+      const dtScaled = Math.min((dtMs / 1000) * (settings.speedFactor || 1), 0.25)
 
       if (!settings.paused) {
-        updateWorld(world, dt)
-        plantAccumulator += dt
+        // Integración paso fijo para suavizar
+        const step = 1 / 60
+        accumulator += dtScaled
+        let steps = 0
+        const maxSteps = 5
+        while (accumulator >= step && steps < maxSteps) {
+          updateWorld(world, step)
+          plantAccumulator += step
+          accumulator -= step
+          steps++
+        }
+
         // Reposición de plantas por segundo
         const toSpawn = Math.floor(plantAccumulator * settings.plantRegenPerSecond)
         if (toSpawn > 0) {
@@ -119,28 +152,40 @@ export default function CanvasView() {
           plantAccumulator -= toSpawn / settings.plantRegenPerSecond
         }
 
-        // Stats cada ~0.5s
-        if (world.time - world.lastStatsAt >= 0.5) {
-          world.lastStatsAt = world.time
-          const herbG: Record<string, number> = {}
-          for (const h of world.herbivores) herbG[h.genotypeId] = (herbG[h.genotypeId] ?? 0) + 1
-          const carnG: Record<string, number> = {}
-          for (const c of world.carnivores) carnG[c.genotypeId] = (carnG[c.genotypeId] ?? 0) + 1
-          pushStats({
-            t: world.time,
-            plants: world.plants.length,
-            herbivores: world.herbivores.length,
-            carnivores: world.carnivores.length,
-            herbivoresByGenotype: herbG,
-            carnivoresByGenotype: carnG,
-          })
-        }
+        // Las estadísticas se manejan por separado para evitar bloquear la animación
       }
 
-      draw(world, ctx, settings.showVision)
+      draw(
+        world,
+        ctx,
+        settings.showVision,
+        herbColorMapRef.current,
+        carnColorMapRef.current,
+        herbColorIdxRef,
+        carnColorIdxRef,
+      )
     }
 
     rafId = requestAnimationFrame(loop)
+
+    // Timer separado para estadísticas (desacoplado del loop de animación)
+    const statsInterval = setInterval(() => {
+      if (!settings.paused && worldRef.current) {
+        const world = worldRef.current
+        const herbG: Record<string, number> = {}
+        for (const h of world.herbivores) herbG[h.genotypeId] = (herbG[h.genotypeId] ?? 0) + 1
+        const carnG: Record<string, number> = {}
+        for (const c of world.carnivores) carnG[c.genotypeId] = (carnG[c.genotypeId] ?? 0) + 1
+        pushStats({
+          t: world.time,
+          plants: world.plants.length,
+          herbivores: world.herbivores.length,
+          carnivores: world.carnivores.length,
+          herbivoresByGenotype: herbG,
+          carnivoresByGenotype: carnG,
+        })
+      }
+    }, 1000) // 1 segundo
 
     // Recalcular tamaño on resize para evitar saltos por layout
     const onResize = () => {
@@ -159,6 +204,7 @@ export default function CanvasView() {
 
     return () => {
       cancelAnimationFrame(rafId)
+      clearInterval(statsInterval)
       window.removeEventListener('resize', onResize)
     }
   }, [settings.resetEpoch, settings.maxPlants, settings.initialPlants, settings.initialHerbivores, settings.initialCarnivores, settings.speedFactor, settings.paused, settings.plantRegenPerSecond, settings.showVision, pushStats])
@@ -202,8 +248,12 @@ function updateWorld(world: World, dt: number) {
       diry = rv.y
     }
     const n = normalize(dirx, diry)
-    h.vx = n.x * speed
-    h.vy = n.y * speed
+    // Suavizado de velocidad para evitar cambios bruscos
+    const targetVx = n.x * speed
+    const targetVy = n.y * speed
+    const blend = 1 - Math.exp(-8 * dt)
+    h.vx = h.vx + (targetVx - h.vx) * blend
+    h.vy = h.vy + (targetVy - h.vy) * blend
 
     h.x = clamp(h.x + h.vx * dt, BOUNDS_PADDING, world.width - BOUNDS_PADDING)
     h.y = clamp(h.y + h.vy * dt, BOUNDS_PADDING, world.height - BOUNDS_PADDING)
@@ -279,8 +329,11 @@ function updateWorld(world: World, dt: number) {
       diry = rv.y
     }
     const n = normalize(dirx, diry)
-    c.vx = n.x * speed
-    c.vy = n.y * speed
+    const targetVxC = n.x * speed
+    const targetVyC = n.y * speed
+    const blendC = 1 - Math.exp(-8 * dt)
+    c.vx = c.vx + (targetVxC - c.vx) * blendC
+    c.vy = c.vy + (targetVyC - c.vy) * blendC
 
     c.x = clamp(c.x + c.vx * dt, BOUNDS_PADDING, world.width - BOUNDS_PADDING)
     c.y = clamp(c.y + c.vy * dt, BOUNDS_PADDING, world.height - BOUNDS_PADDING)
@@ -321,7 +374,15 @@ function updateWorld(world: World, dt: number) {
   }
 }
 
-function draw(world: World, ctx: CanvasRenderingContext2D, showVision: boolean) {
+function draw(
+  world: World,
+  ctx: CanvasRenderingContext2D,
+  showVision: boolean,
+  herbColorMap: Map<string, string>,
+  carnColorMap: Map<string, string>,
+  herbColorIdxRef: { current: number },
+  carnColorIdxRef: { current: number },
+) {
   ctx.clearRect(0, 0, world.width, world.height)
   // Plantas
   ctx.fillStyle = '#47d16a'
@@ -338,7 +399,7 @@ function draw(world: World, ctx: CanvasRenderingContext2D, showVision: boolean) 
     }
     ctx.beginPath()
     ctx.arc(h.x, h.y, 2.2, 0, Math.PI * 2)
-    ctx.fillStyle = '#40a2ff'
+    ctx.fillStyle = getVariantColor(herbColorMap, herbColorIdxRef, COOL_PALETTE, h.genotypeId)
     ctx.fill()
   }
   // Carnívoros
@@ -351,7 +412,7 @@ function draw(world: World, ctx: CanvasRenderingContext2D, showVision: boolean) 
     }
     ctx.beginPath()
     ctx.arc(c.x, c.y, 2.6, 0, Math.PI * 2)
-    ctx.fillStyle = '#ff5a5a'
+    ctx.fillStyle = getVariantColor(carnColorMap, carnColorIdxRef, WARM_PALETTE, c.genotypeId)
     ctx.fill()
   }
 }
