@@ -6,14 +6,14 @@ export default function StatsPanel() {
   const stats = useSimStore((s) => s.stats)
   const [open, setOpen] = useState(true)
 
-  const seriesTotals = useMemo(() => stats.map((s, i) => ({ i, plants: s.plants, herb: s.herbivores, carn: s.carnivores })), [stats])
+  const seriesTotals = useMemo(() => stats.map((s) => ({ t: Number(s.t.toFixed(2)), plants: s.plants, herb: s.herbivores, carn: s.carnivores })), [stats])
 
   const latest = stats[stats.length - 1]
   const topHerbKeys = useMemo(() => (latest ? Object.entries(latest.herbivoresByGenotype).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k]) => k) : []), [latest])
   const topCarnKeys = useMemo(() => (latest ? Object.entries(latest.carnivoresByGenotype).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k]) => k) : []), [latest])
 
-  const seriesHerb = useMemo(() => stats.map((s, i) => ({ i, ...topHerbKeys.reduce((acc, k) => ({ ...acc, [k]: s.herbivoresByGenotype[k] ?? 0 }), {}) })), [stats, topHerbKeys])
-  const seriesCarn = useMemo(() => stats.map((s, i) => ({ i, ...topCarnKeys.reduce((acc, k) => ({ ...acc, [k]: s.carnivoresByGenotype[k] ?? 0 }), {}) })), [stats, topCarnKeys])
+  const seriesHerb = useMemo(() => stats.map((s) => ({ t: Number(s.t.toFixed(2)), ...topHerbKeys.reduce((acc, k) => ({ ...acc, [k]: s.herbivoresByGenotype[k] ?? 0 }), {}) })), [stats, topHerbKeys])
+  const seriesCarn = useMemo(() => stats.map((s) => ({ t: Number(s.t.toFixed(2)), ...topCarnKeys.reduce((acc, k) => ({ ...acc, [k]: s.carnivoresByGenotype[k] ?? 0 }), {}) })), [stats, topCarnKeys])
 
   return (
     <div style={{ position: 'absolute', right: 12, top: 12, zIndex: 10, width: open ? 420 : 140 }}>
@@ -28,13 +28,13 @@ export default function StatsPanel() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={seriesTotals} margin={{ left: -12, right: 8, top: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#273142" />
-                  <XAxis dataKey="i" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey="t" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
                   <YAxis stroke="#8ea2b5" tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip contentStyle={{ background: '#0f1523', border: '1px solid #2a2f3a' }} />
                   <Legend />
-                  <Line type="monotone" dataKey="plants" stroke="#47d16a" dot={false} name="Plantas" />
-                  <Line type="monotone" dataKey="herb" stroke="#40a2ff" dot={false} name="Herbívoros" />
-                  <Line type="monotone" dataKey="carn" stroke="#ff5a5a" dot={false} name="Carnívoros" />
+                  <Line type="monotone" dataKey="plants" stroke="#47d16a" dot={false} name="Plantas" isAnimationActive={false} />
+                  <Line type="monotone" dataKey="herb" stroke="#40a2ff" dot={false} name="Herbívoros" isAnimationActive={false} />
+                  <Line type="monotone" dataKey="carn" stroke="#ff5a5a" dot={false} name="Carnívoros" isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -46,11 +46,11 @@ export default function StatsPanel() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={seriesHerb} margin={{ left: -12, right: 8, top: 8, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#273142" />
-                      <XAxis dataKey="i" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="t" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
                       <YAxis stroke="#8ea2b5" tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip contentStyle={{ background: '#0f1523', border: '1px solid #2a2f3a' }} />
                       {topHerbKeys.map((k, idx) => (
-                        <Line key={k} type="monotone" dataKey={k} stroke={palette[idx % palette.length]} dot={false} name={k} />
+                        <Line key={k} type="monotone" dataKey={k} stroke={palette[idx % palette.length]} dot={false} name={k} isAnimationActive={false} />
                       ))}
                     </LineChart>
                   </ResponsiveContainer>
@@ -65,11 +65,11 @@ export default function StatsPanel() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={seriesCarn} margin={{ left: -12, right: 8, top: 8, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#273142" />
-                      <XAxis dataKey="i" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="t" stroke="#8ea2b5" tick={{ fontSize: 11 }} />
                       <YAxis stroke="#8ea2b5" tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip contentStyle={{ background: '#0f1523', border: '1px solid #2a2f3a' }} />
                       {topCarnKeys.map((k, idx) => (
-                        <Line key={k} type="monotone" dataKey={k} stroke={palette[(idx + 4) % palette.length]} dot={false} name={k} />
+                        <Line key={k} type="monotone" dataKey={k} stroke={palette[(idx + 4) % palette.length]} dot={false} name={k} isAnimationActive={false} />
                       ))}
                     </LineChart>
                   </ResponsiveContainer>

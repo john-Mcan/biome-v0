@@ -21,8 +21,9 @@ export default function CanvasView() {
     if (!canvasRef.current) return
     const canvas = canvasRef.current
     const dpr = window.devicePixelRatio || 1
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
+    // Asegurar que el canvas ocupe el viewport y se adapte a DPR
+    const width = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth
+    const height = canvas.parentElement ? canvas.parentElement.clientHeight : window.innerHeight
     canvas.width = Math.floor(width * dpr)
     canvas.height = Math.floor(height * dpr)
     const ctx = canvas.getContext('2d')!
@@ -140,7 +141,26 @@ export default function CanvasView() {
     }
 
     rafId = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(rafId)
+
+    // Recalcular tamaño on resize para evitar saltos por layout
+    const onResize = () => {
+      const dpr2 = window.devicePixelRatio || 1
+      const w = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth
+      const h = canvas.parentElement ? canvas.parentElement.clientHeight : window.innerHeight
+      canvas.width = Math.floor(w * dpr2)
+      canvas.height = Math.floor(h * dpr2)
+      ctx.setTransform(dpr2, 0, 0, dpr2, 0, 0)
+      if (worldRef.current) {
+        worldRef.current.width = w
+        worldRef.current.height = h
+      }
+    }
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', onResize)
+    }
   }, [settings.resetEpoch, settings.maxPlants, settings.initialPlants, settings.initialHerbivores, settings.initialCarnivores, settings.speedFactor, settings.paused, settings.plantRegenPerSecond, settings.showVision, pushStats])
 
   return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block', background: '#0b0e14' }} />
